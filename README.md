@@ -35,8 +35,12 @@ Built for the couch, the bed, or anywhere you want to control your PC without re
 
 ## Setup
 
-1. **Build the APK** — Open the project in Android Studio, sync Gradle, and run on your phone. Or build from the command line:
+1. **Download the APK** — Grab the latest APK from the [Releases](https://github.com/ToxicOrca/ghostboard-android-bluetooth-mouse-keyboard/releases) page. Transfer it to your phone and install (you may need to enable "Install from unknown sources" in your phone's settings).
+
+   Or build it yourself:
    ```
+   git clone https://github.com/ToxicOrca/ghostboard-android-bluetooth-mouse-keyboard.git
+   cd ghostboard-android-bluetooth-mouse-keyboard
    ./gradlew assembleDebug
    ```
    The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
