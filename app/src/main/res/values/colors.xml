@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_dark">#FF1A1A2E</color>
+    <color name="surface_dark">#FF16213E</color>
+    <color name="trackpad_bg">#FF0F3460</color>
+    <color name="trackpad_border">#FF533483</color>
+    <color name="key_bg">#FF2A2A4A</color>
+    <color name="key_pressed">#FF533483</color>
+    <color name="key_text">#FFE0E0E0</color>
+    <color name="accent">#FF7B68EE</color>
+    <color name="accent_dim">#FF5A4FCF</color>
+    <color name="status_connected">#FF4CAF50</color>
+    <color name="status_disconnected">#FFFF5252</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="text_secondary">#FF9E9E9E</color>
+    <color name="ic_launcher_background">#FF000000</color>
+</resources>

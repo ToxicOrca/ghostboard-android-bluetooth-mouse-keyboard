@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GhostBoard</string>
+    <string name="trackpad_label">Trackpad</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="not_connected">Not Connected</string>
+    <string name="connecting">Connecting...</string>
+    <string name="connected_to">Connected to %s</string>
+    <string name="bt_not_supported">Bluetooth not supported on this device</string>
+    <string name="bt_hid_not_supported">Bluetooth HID not supported on this device</string>
+    <string name="select_device">Select Device</string>
+</resources>
