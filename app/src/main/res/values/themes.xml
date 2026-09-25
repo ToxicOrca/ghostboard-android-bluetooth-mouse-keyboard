@@ -8,6 +8,5 @@
         <item name="colorSurface">@color/surface_dark</item>
         <item name="android:statusBarColor">@color/background_dark</item>
         <item name="android:navigationBarColor">@color/background_dark</item>
-        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>

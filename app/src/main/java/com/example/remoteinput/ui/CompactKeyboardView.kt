@@ -9,6 +9,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.example.remoteinput.R
+import com.example.remoteinput.settings.AppTheme
 
 class CompactKeyboardView @JvmOverloads constructor(
     context: Context,
@@ -220,6 +221,15 @@ class CompactKeyboardView @JvmOverloads constructor(
     private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.text_secondary)
         textAlign = Paint.Align.CENTER
+    }
+
+    fun applyTheme(theme: AppTheme) {
+        keyBgPaint.color = theme.keyBg
+        keyPressedPaint.color = theme.keyPressed
+        keyActivePaint.color = theme.accent
+        keyTextPaint.color = theme.keyText
+        smallTextPaint.color = theme.textSecondary
+        invalidate()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

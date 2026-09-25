@@ -3,13 +3,20 @@ package com.example.remoteinput
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -19,7 +26,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.remoteinput.bluetooth.BluetoothHidManager
+import com.example.remoteinput.settings.AppTheme
+import com.example.remoteinput.settings.SettingsDialog
+import com.example.remoteinput.settings.SettingsManager
 import com.example.remoteinput.ui.CompactKeyboardView
+import com.example.remoteinput.ui.HidKeyMapper
 import com.example.remoteinput.ui.TrackpadView
 
 class MainActivity : AppCompatActivity() {
@@ -29,32 +40,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var hidManager: BluetoothHidManager
+    private lateinit var settings: SettingsManager
     private lateinit var trackpadView: TrackpadView
     private lateinit var keyboardView: CompactKeyboardView
     private lateinit var statusText: TextView
     private lateinit var statusDot: View
-    private lateinit var connectButton: Button
     private lateinit var fullscreenKbButton: Button
+    private lateinit var settingsButton: Button
+    private lateinit var exitButton: Button
     private lateinit var leftClickButton: View
     private lateinit var rightClickButton: View
     private lateinit var trackpadContainer: FrameLayout
+    private lateinit var mainContent: LinearLayout
+    private lateinit var hiddenInput: EditText
+    private lateinit var rootLayout: LinearLayout
+    private lateinit var statusBar: FrameLayout
 
     private var keyboardFullscreen = false
+    private var isPortrait = false
+    private var softKeyboardShowing = false
+    private var settingsDialog: SettingsDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         hideSystemUI()
         setContentView(R.layout.activity_main)
 
+        settings = SettingsManager(this)
+
+        rootLayout = findViewById(R.id.rootLayout)
+        statusBar = findViewById(R.id.statusBar)
         statusText = findViewById(R.id.statusText)
         statusDot = findViewById(R.id.statusDot)
-        connectButton = findViewById(R.id.connectButton)
         fullscreenKbButton = findViewById(R.id.fullscreenKbButton)
+        settingsButton = findViewById(R.id.settingsButton)
+        exitButton = findViewById(R.id.exitButton)
         trackpadView = findViewById(R.id.trackpadView)
         keyboardView = findViewById(R.id.keyboardView)
         leftClickButton = findViewById(R.id.leftClickButton)
         rightClickButton = findViewById(R.id.rightClickButton)
         trackpadContainer = findViewById(R.id.trackpadContainer)
+        mainContent = findViewById(R.id.mainContent)
+        hiddenInput = findViewById(R.id.hiddenInput)
 
         // Singleton — survives activity recreation
         hidManager = BluetoothHidManager.getInstance(this)
@@ -62,8 +90,15 @@ class MainActivity : AppCompatActivity() {
         setupTrackpad()
         setupKeyboard()
         setupMouseButtons()
-        setupConnectButton()
         setupFullscreenKbButton()
+        setupSettingsButton()
+        setupExitButton()
+        setupHiddenInput()
+
+        // Detect initial orientation
+        isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        applyOrientationLayout()
+        applyTheme(settings.currentTheme)
 
         if (checkPermissions()) {
             initBluetooth()
@@ -74,17 +109,140 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         hideSystemUI()
         if (::hidManager.isInitialized) {
-            // Re-attach listener and re-init if the profile proxy was lost
-            // while in the background. init() is a no-op if already ready.
             initBluetooth()
         }
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        settingsDialog?.dismiss()
+        settingsDialog = null
+        isPortrait = newConfig.orientation == Configuration.ORIENTATION_PORTRAIT
+        applyOrientationLayout()
+    }
+
+    private fun applyOrientationLayout() {
+        if (isPortrait) {
+            // Portrait: hide custom keyboard, show trackpad full-width
+            keyboardView.visibility = View.GONE
+            trackpadContainer.visibility = View.VISIBLE
+            mainContent.orientation = LinearLayout.VERTICAL
+
+            val tpParams = trackpadContainer.layoutParams as LinearLayout.LayoutParams
+            tpParams.width = LinearLayout.LayoutParams.MATCH_PARENT
+            tpParams.height = 0
+            tpParams.weight = 1f
+            trackpadContainer.layoutParams = tpParams
+
+            // Update buttons
+            keyboardFullscreen = false
+            softKeyboardShowing = false
+
+            fullscreenKbButton.visibility = View.VISIBLE
+            fullscreenKbButton.text = "KB"
+        } else {
+            // Landscape: restore split view
+            hideSoftKeyboard()
+            keyboardView.visibility = View.VISIBLE
+            trackpadContainer.visibility = View.VISIBLE
+            mainContent.orientation = LinearLayout.HORIZONTAL
+
+            applyTrackpadPosition()
+
+            // Update buttons
+            fullscreenKbButton.visibility = View.VISIBLE
+            fullscreenKbButton.text = "KB"
+            keyboardFullscreen = false
+            softKeyboardShowing = false
+        }
+    }
+
+    private fun applyTrackpadPosition() {
+        if (isPortrait) return // Only applies to landscape
+
+        val trackpadOnLeft = settings.trackpadOnLeft
+
+        // Remove both views from mainContent
+        mainContent.removeView(keyboardView)
+        mainContent.removeView(trackpadContainer)
+
+        if (trackpadOnLeft) {
+            mainContent.addView(trackpadContainer, 0)
+            mainContent.addView(keyboardView, 1)
+        } else {
+            mainContent.addView(keyboardView, 0)
+            mainContent.addView(trackpadContainer, 1)
+        }
+
+        val kbParams = keyboardView.layoutParams as LinearLayout.LayoutParams
+        kbParams.width = 0
+        kbParams.height = LinearLayout.LayoutParams.MATCH_PARENT
+        kbParams.weight = 1f
+
+        val tpParams = trackpadContainer.layoutParams as LinearLayout.LayoutParams
+        tpParams.width = 0
+        tpParams.height = LinearLayout.LayoutParams.MATCH_PARENT
+        tpParams.weight = 1f
+
+        if (trackpadOnLeft) {
+            tpParams.marginEnd = (4 * resources.displayMetrics.density).toInt()
+            tpParams.marginStart = 0
+            kbParams.marginEnd = 0
+            kbParams.marginStart = 0
+        } else {
+            kbParams.marginEnd = (4 * resources.displayMetrics.density).toInt()
+            kbParams.marginStart = 0
+            tpParams.marginEnd = 0
+            tpParams.marginStart = 0
+        }
+
+        keyboardView.layoutParams = kbParams
+        trackpadContainer.layoutParams = tpParams
+    }
+
+    private fun applyTheme(theme: AppTheme) {
+        // Apply to root layout, system status bar, and app status bar
+        rootLayout.setBackgroundColor(theme.background)
+        statusBar.setBackgroundColor(theme.surface)
+        window.statusBarColor = theme.surface
+
+        // Apply to status text
+        statusText.setTextColor(theme.textSecondary)
+
+        // Apply to buttons
+        fullscreenKbButton.setTextColor(theme.accent)
+        settingsButton.setTextColor(theme.accent)
+        exitButton.setTextColor(theme.textSecondary)
+
+        // Apply to mouse buttons
+        leftClickButton.setBackgroundColor(theme.keyBg)
+        rightClickButton.setBackgroundColor(theme.keyBg)
+
+        // Apply to custom views
+        trackpadView.applyTheme(theme)
+        keyboardView.applyTheme(theme)
+
+        // Update status dot color based on connection state
+        if (hidManager.isConnected) {
+            statusDot.setBackgroundColor(getColor(R.color.status_connected))
+        } else {
+            statusDot.setBackgroundColor(getColor(R.color.status_disconnected))
+        }
+    }
+
     private fun hideSystemUI() {
+        // Make status bar blend with app - don't hide it, so content stays below the cutout
+        if (::settings.isInitialized) {
+            window.statusBarColor = settings.currentTheme.surface
+        }
         window.decorView.windowInsetsController?.let {
-            it.hide(WindowInsets.Type.systemBars())
+            // Only hide navigation bar - keep status bar visible to avoid cutout clipping
+            it.hide(WindowInsets.Type.navigationBars())
             it.systemBarsBehavior =
                 android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            // Use light/dark status bar icons based on dark theme
+            it.setSystemBarsAppearance(0,
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
         }
     }
 
@@ -134,13 +292,11 @@ class MainActivity : AppCompatActivity() {
                 val name = device.name ?: device.address
                 statusText.text = getString(R.string.connected_to, name)
                 statusDot.setBackgroundColor(getColor(R.color.status_connected))
-                connectButton.text = getString(R.string.disconnect)
             }
 
             override fun onDisconnected() {
                 statusText.text = getString(R.string.not_connected)
                 statusDot.setBackgroundColor(getColor(R.color.status_disconnected))
-                connectButton.text = getString(R.string.connect)
             }
 
             override fun onAppRegistered() {
@@ -221,67 +377,184 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupMouseButtons() {
         leftClickButton.setOnTouchListener { v, event ->
+            val theme = settings.currentTheme
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     hidManager.sendMouseButton(1, true)
-                    v.setBackgroundColor(getColor(R.color.key_pressed))
+                    v.setBackgroundColor(theme.keyPressed)
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     hidManager.sendMouseButton(1, false)
-                    v.setBackgroundColor(getColor(R.color.key_bg))
+                    v.setBackgroundColor(theme.keyBg)
                 }
             }
             true
         }
 
         rightClickButton.setOnTouchListener { v, event ->
+            val theme = settings.currentTheme
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     hidManager.sendMouseButton(2, true)
-                    v.setBackgroundColor(getColor(R.color.key_pressed))
+                    v.setBackgroundColor(theme.keyPressed)
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     hidManager.sendMouseButton(2, false)
-                    v.setBackgroundColor(getColor(R.color.key_bg))
+                    v.setBackgroundColor(theme.keyBg)
                 }
             }
             true
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun setupConnectButton() {
-        connectButton.setOnClickListener {
-            if (hidManager.isConnected) {
-                hidManager.disconnect()
+    private fun setupFullscreenKbButton() {
+        fullscreenKbButton.setOnClickListener {
+            if (isPortrait) {
+                toggleSoftKeyboard()
             } else {
-                showDevicePicker()
+                // In landscape: toggle fullscreen keyboard vs split view
+                keyboardFullscreen = !keyboardFullscreen
+
+                val kbParams = keyboardView.layoutParams as LinearLayout.LayoutParams
+                val tpParams = trackpadContainer.layoutParams as LinearLayout.LayoutParams
+
+                if (keyboardFullscreen) {
+                    kbParams.weight = 1f
+                    kbParams.marginEnd = 0
+                    trackpadContainer.visibility = View.GONE
+                    fullscreenKbButton.text = "TP"
+                } else {
+                    trackpadContainer.visibility = View.VISIBLE
+                    applyTrackpadPosition()
+                    fullscreenKbButton.text = "KB"
+                }
+
+                keyboardView.layoutParams = kbParams
             }
         }
     }
 
-    private fun setupFullscreenKbButton() {
-        fullscreenKbButton.setOnClickListener {
-            keyboardFullscreen = !keyboardFullscreen
+    private fun setupSettingsButton() {
+        settingsButton.setOnClickListener {
+            val dialog = SettingsDialog(
+                context = this,
+                settings = settings,
+                isConnected = hidManager.isConnected,
+                isPortrait = isPortrait,
+                onConnect = {
+                    showDevicePicker()
+                },
+                onDisconnect = {
+                    hidManager.disconnect()
+                },
+                onThemeChanged = { theme ->
+                    applyTheme(theme)
+                },
+                onTrackpadPositionChanged = { _ ->
+                    if (!isPortrait) {
+                        applyTrackpadPosition()
+                    }
+                },
+                onOrientationChanged = { portrait ->
+                    settingsDialog?.dismiss()
+                    settingsDialog = null
+                    if (portrait) {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    } else {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    }
+                }
+            )
+            dialog.setOnDismissListener { settingsDialog = null }
+            settingsDialog = dialog
+            dialog.show()
+        }
+    }
 
-            val kbParams = keyboardView.layoutParams as LinearLayout.LayoutParams
-            val tpParams = trackpadContainer.layoutParams as LinearLayout.LayoutParams
+    private fun setupExitButton() {
+        exitButton.setOnClickListener {
+            finishAffinity()
+        }
+    }
 
-            if (keyboardFullscreen) {
-                kbParams.weight = 1f
-                kbParams.marginEnd = 0
-                trackpadContainer.visibility = View.GONE
-                fullscreenKbButton.text = "TP"
-            } else {
-                kbParams.weight = 1f
-                kbParams.marginEnd = (4 * resources.displayMetrics.density).toInt()
-                trackpadContainer.visibility = View.VISIBLE
-                tpParams.weight = 1f
-                trackpadContainer.layoutParams = tpParams
-                fullscreenKbButton.text = "KB"
+    private fun toggleSoftKeyboard() {
+        if (softKeyboardShowing) {
+            hideSoftKeyboard()
+        } else {
+            showSoftKeyboard()
+        }
+    }
+
+    private fun showSoftKeyboard() {
+        hiddenInput.visibility = View.VISIBLE
+        hiddenInput.requestFocus()
+        hiddenInput.postDelayed({
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_FORCED)
+        }, 100)
+        softKeyboardShowing = true
+        fullscreenKbButton.text = "TP"
+    }
+
+    private fun hideSoftKeyboard() {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(hiddenInput.windowToken, 0)
+        hiddenInput.clearFocus()
+        softKeyboardShowing = false
+        if (isPortrait) {
+            fullscreenKbButton.text = "KB"
+        }
+    }
+
+    private fun setupHiddenInput() {
+        // Capture text input from soft keyboard
+        hiddenInput.addTextChangedListener(object : TextWatcher {
+            private var previousText = ""
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                previousText = s?.toString() ?: ""
             }
 
-            keyboardView.layoutParams = kbParams
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+
+            override fun afterTextChanged(s: Editable?) {
+                val newText = s?.toString() ?: ""
+                if (newText.length > previousText.length) {
+                    // Characters were added
+                    val added = newText.substring(previousText.length)
+                    for (c in added) {
+                        val event = HidKeyMapper.mapChar(c)
+                        if (event != null) {
+                            hidManager.sendKeyPress(event.modifier, event.keyCode)
+                        }
+                    }
+                }
+                // Keep the EditText from growing indefinitely
+                if (newText.length > 50) {
+                    hiddenInput.removeTextChangedListener(this)
+                    hiddenInput.setText("")
+                    hiddenInput.addTextChangedListener(this)
+                }
+            }
+        })
+
+        // Capture backspace and enter from soft keyboard via key events
+        hiddenInput.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DEL -> {
+                        hidManager.sendKeyPress(0, CompactKeyboardView.HidKeyCodes.KEY_BACKSPACE)
+                        true
+                    }
+                    KeyEvent.KEYCODE_ENTER -> {
+                        hidManager.sendKeyPress(0, CompactKeyboardView.HidKeyCodes.KEY_ENTER)
+                        true
+                    }
+                    else -> false
+                }
+            } else {
+                false
+            }
         }
     }
 
@@ -324,7 +597,14 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // Don't destroy HID manager on activity finish — it's a singleton
-    // that survives across activity restarts. Only kill it if the whole
-    // process dies.
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // If soft keyboard is showing in portrait, hide it instead of exiting
+        if (isPortrait && softKeyboardShowing) {
+            hideSoftKeyboard()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 }
