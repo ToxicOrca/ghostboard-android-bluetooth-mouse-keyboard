@@ -222,7 +222,12 @@ class BluetoothHidManager private constructor(private val context: Context) {
             profileProxyConnected = true
 
             if (!appRegistered) {
-                registerHidApp()
+                try {
+                    registerHidApp()
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Bluetooth permission not yet granted", e)
+                    mainHandler.post { listener?.onError("Bluetooth permission required") }
+                }
             }
         }
 

@@ -9,6 +9,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.example.remoteinput.R
+import com.example.remoteinput.settings.AppTheme
 
 class TrackpadView @JvmOverloads constructor(
     context: Context,
@@ -51,6 +52,13 @@ class TrackpadView @JvmOverloads constructor(
         color = context.getColor(R.color.text_secondary)
         textSize = 14f * resources.displayMetrics.density
         textAlign = Paint.Align.CENTER
+    }
+
+    fun applyTheme(theme: AppTheme) {
+        bgPaint.color = theme.trackpadBg
+        borderPaint.color = theme.trackpadBorder
+        labelPaint.color = theme.textSecondary
+        invalidate()
     }
 
     private val bounds = RectF()
