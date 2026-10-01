@@ -98,6 +98,94 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- ================= 文本输入中继栏（需求 A） ================= -->
+    <LinearLayout
+        android:id="@+id/relayBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface_dark"
+        android:orientation="vertical"
+        android:paddingStart="8dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="6dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 输入框：点击即调起系统默认输入法（搜狗/微信输入法/系统拼音/语音） -->
+            <EditText
+                android:id="@+id/relayInput"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:background="@color/key_bg"
+                android:hint="@string/relay_hint"
+                android:importantForAutofill="no"
+                android:imeOptions="actionSend|flagNoExtractUi|flagNoFullscreen"
+                android:inputType="text"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:scrollHorizontally="true"
+                android:textColor="@color/key_text"
+                android:textColorHint="@color/text_secondary"
+                android:textCursorDrawable="@null"
+                android:textSize="14sp" />
+
+            <!-- 发送按钮：单击发送；长按打开中继模式菜单 -->
+            <Button
+                android:id="@+id/relaySendButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="6dp"
+                android:minWidth="0dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/relay_send"
+                android:textColor="@color/accent"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- 拼音预演 + 当前模式标签 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/relayPreview"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="start"
+                android:maxLines="1"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/relayModeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:background="@color/key_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
+                android:textColor="@color/accent"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
     <!-- Main content: keyboard left, trackpad right (or swapped based on settings) -->
     <LinearLayout
         android:id="@+id/mainContent"

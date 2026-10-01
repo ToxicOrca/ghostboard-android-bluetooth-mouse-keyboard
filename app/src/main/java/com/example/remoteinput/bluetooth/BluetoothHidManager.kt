@@ -488,8 +488,119 @@ class BluetoothHidManager private constructor(private val context: Context) {
         }
     }
 
+    // --- Ordered key sequence (text relay / 中文拼音中继) ---
+
+    /** 一个按键动作：修饰键掩码 + HID 键码。 */
+    data class HidKeyStep(val modifier: Int, val keyCode: Int)
+
+    private val emptyKeyReport = byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0)
+
+    /**
+     * 序列取消令牌：每发起一次序列自增一次，[cancelKeySequence] 也自增。
+     * 发送线程每发一个键就比对一次，不一致立即提前退出。
+     */
+    @Volatile
+    private var sequenceToken = 0
+
+    /** 中断当前正在发送的按键序列。 */
+    fun cancelKeySequence() {
+        sequenceToken++
+    }
+
+    /**
+     * 按顺序发送一串按键动作，每个动作的时序为：
+     *     Key Down -> holdMs -> Key Up -> gapMs
+     *
+     * 默认 holdMs = gapMs = 18ms，落在需求要求的 15~20ms 区间内；
+     * 全部在专用发送线程 [sendHandler] 上执行，保证与鼠标事件互不插队。
+     *
+     * @param onProgress 每 8 个按键回调一次 (已发送, 总数)
+     * @param onFinished completed=false 表示被取消或连接中断
+     */
+    fun sendKeySequence(
+        steps: List<HidKeyStep>,
+        holdMs: Long = 18L,
+        gapMs: Long = 18L,
+        onProgress: ((sent: Int, total: Int) -> Unit)? = null,
+        onFinished: ((completed: Boolean) -> Unit)? = null
+    ) {
+        if (connectedDevice == null || steps.isEmpty()) {
+            mainHandler.post { onFinished?.invoke(false) }
+            return
+        }
+
+        val token = ++sequenceToken
+        val total = steps.size
+
+        sendHandler.post {
+            wakeIfIdle()
+            var sent = 0
+            var aborted = false
+
+            for (step in steps) {
+                if (token != sequenceToken) { aborted = true; break }
+
+                // 注意：不能在 run { } 这类内联 lambda 里写 break（Kotlin 实验特性），
+                // 这里显式判空后跳出。
+                val device = connectedDevice
+                val hid = hidDevice
+                if (device == null || hid == null) { aborted = true; break }
+
+                hid.sendReport(
+                    device, 1,
+                    byteArrayOf(step.modifier.toByte(), 0, step.keyCode.toByte(), 0, 0, 0, 0, 0)
+                )
+                sleepQuietly(holdMs)
+                hid.sendReport(device, 1, emptyKeyReport)
+                sleepQuietly(gapMs)
+
+                sent++
+                lastSendTimeMs = System.currentTimeMillis()
+
+                if (sent % 8 == 0 || sent == total) {
+                    val progress = sent
+                    mainHandler.post { onProgress?.invoke(progress, total) }
+                }
+            }
+
+            val completed = !aborted && sent == total
+            mainHandler.post { onFinished?.invoke(completed) }
+        }
+    }
+
+    /**
+     * 发送组合键（修饰键 + 单键），用于剪贴板宏：
+     *   macOS          -> MOD_LGUI + V   (Cmd+V)
+     *   Windows/Android-> MOD_LCTRL + V  (Ctrl+V)
+     */
+    fun sendKeyCombo(
+        modifier: Int,
+        keyCode: Int,
+        holdMs: Long = 30L,
+        gapMs: Long = 20L,
+        onFinished: ((Boolean) -> Unit)? = null
+    ) {
+        sendKeySequence(
+            steps = listOf(HidKeyStep(modifier, keyCode)),
+            holdMs = holdMs,
+            gapMs = gapMs,
+            onProgress = null,
+            onFinished = onFinished
+        )
+    }
+
+    private fun sleepQuietly(ms: Long) {
+        if (ms <= 0L) return
+        try {
+            Thread.sleep(ms)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
     // Don't destroy on activity lifecycle — only on explicit app kill
     fun destroy() {
+        sequenceToken++
         disconnect()
         hidDevice?.unregisterApp()
         appRegistered = false

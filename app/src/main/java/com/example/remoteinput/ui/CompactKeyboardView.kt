@@ -64,6 +64,7 @@ class CompactKeyboardView @JvmOverloads constructor(
         const val KEY_EQUAL = 0x2E
         const val KEY_LEFT_BRACKET = 0x2F
         const val KEY_RIGHT_BRACKET = 0x30
+        const val KEY_BACKSLASH = 0x31
         const val KEY_SEMICOLON = 0x33
         const val KEY_APOSTROPHE = 0x34
         const val KEY_GRAVE = 0x35

@@ -10,4 +10,17 @@
     <string name="bt_not_supported">Bluetooth not supported on this device</string>
     <string name="bt_hid_not_supported">Bluetooth HID not supported on this device</string>
     <string name="select_device">Select Device</string>
+
+    <!-- 文本中继 -->
+    <string name="relay_hint">输入中文/英文，回车或点「发送」</string>
+    <string name="relay_send">发送</string>
+    <string name="relay_mode_title">中继发送模式</string>
+    <string name="relay_timing_title">按键时序（毫秒）</string>
+    <string name="relay_sending">发送中 %1$d/%2$d…（再次点击「发送」可中断）</string>
+    <string name="relay_done">已发送 %1$d 个按键</string>
+    <string name="relay_cancelled">已中断发送</string>
+    <string name="relay_not_connected">尚未连接受控设备，请先在设置里连接</string>
+    <string name="relay_empty">请输入要发送的内容</string>
+    <string name="relay_paste_mac">粘贴宏：Cmd+V (macOS)</string>
+    <string name="relay_paste_win">粘贴宏：Ctrl+V (Windows)</string>
 </resources>

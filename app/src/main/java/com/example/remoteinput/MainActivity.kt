@@ -14,6 +14,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -26,6 +27,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.remoteinput.bluetooth.BluetoothHidManager
+import com.example.remoteinput.relay.PasteTarget
+import com.example.remoteinput.relay.RelayMode
+import com.example.remoteinput.relay.TextRelayController
 import com.example.remoteinput.settings.AppTheme
 import com.example.remoteinput.settings.SettingsDialog
 import com.example.remoteinput.settings.SettingsManager
@@ -56,6 +60,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rootLayout: LinearLayout
     private lateinit var statusBar: FrameLayout
 
+    // --- 文本中继栏 ---
+    private lateinit var relayBar: LinearLayout
+    private lateinit var relayInput: EditText
+    private lateinit var relaySendButton: Button
+    private lateinit var relayPreview: TextView
+    private lateinit var relayModeLabel: TextView
+    private lateinit var relayController: TextRelayController
+    private var lastRelayStepCount = 0
+
     private var keyboardFullscreen = false
     private var isPortrait = false
     private var softKeyboardShowing = false
@@ -83,6 +96,11 @@ class MainActivity : AppCompatActivity() {
         trackpadContainer = findViewById(R.id.trackpadContainer)
         mainContent = findViewById(R.id.mainContent)
         hiddenInput = findViewById(R.id.hiddenInput)
+        relayBar = findViewById(R.id.relayBar)
+        relayInput = findViewById(R.id.relayInput)
+        relaySendButton = findViewById(R.id.relaySendButton)
+        relayPreview = findViewById(R.id.relayPreview)
+        relayModeLabel = findViewById(R.id.relayModeLabel)
 
         // Singleton — survives activity recreation
         hidManager = BluetoothHidManager.getInstance(this)
@@ -94,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         setupSettingsButton()
         setupExitButton()
         setupHiddenInput()
+        setupRelayBar()
 
         // Detect initial orientation
         isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -217,6 +236,19 @@ class MainActivity : AppCompatActivity() {
         // Apply to mouse buttons
         leftClickButton.setBackgroundColor(theme.keyBg)
         rightClickButton.setBackgroundColor(theme.keyBg)
+
+        // Apply to relay bar
+        if (::relayBar.isInitialized) {
+            relayBar.setBackgroundColor(theme.surface)
+            relayInput.setBackgroundColor(theme.keyBg)
+            relayInput.setTextColor(theme.keyText)
+            relayInput.setHintTextColor(theme.textSecondary)
+            relaySendButton.setTextColor(theme.accent)
+            relayPreview.setTextColor(theme.textSecondary)
+            relayModeLabel.setTextColor(theme.accent)
+            relayModeLabel.setBackgroundColor(theme.keyBg)
+            refreshRelayModeLabel()
+        }
 
         // Apply to custom views
         trackpadView.applyTheme(theme)
@@ -556,6 +588,190 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
+    }
+
+    // =================================================================
+    //  文本输入中继（需求 A / B）
+    // =================================================================
+
+    private fun setupRelayBar() {
+        relayController = TextRelayController(this, hidManager)
+
+        relayController.listener = object : TextRelayController.Listener {
+            override fun onRelayStarted(totalSteps: Int, estimatedMs: Long) {
+                lastRelayStepCount = totalSteps
+                relaySendButton.text = "停止"
+                relaySendButton.setTextColor(getColor(R.color.status_disconnected))
+                statusText.text = getString(R.string.relay_sending, 0, totalSteps)
+            }
+
+            override fun onRelayProgress(sent: Int, total: Int) {
+                statusText.text = getString(R.string.relay_sending, sent, total)
+            }
+
+            override fun onRelayFinished(completed: Boolean) {
+                relaySendButton.text = getString(R.string.relay_send)
+                relaySendButton.setTextColor(settings.currentTheme.accent)
+                statusText.text = if (completed) {
+                    getString(R.string.relay_done, lastRelayStepCount)
+                } else {
+                    getString(R.string.relay_cancelled)
+                }
+            }
+
+            override fun onRelayError(message: String) {
+                relaySendButton.text = getString(R.string.relay_send)
+                relaySendButton.setTextColor(settings.currentTheme.accent)
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // 实时展示「中文 -> 拼音流」的预演结果
+        relayInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (!relayController.isBusy) {
+                    updateRelayPreview(s?.toString().orEmpty())
+                }
+            }
+        })
+
+        // 点击输入框 -> 主动唤起系统默认输入法（搜狗 / 微信输入法 / 系统拼音 / 语音）
+        relayInput.setOnClickListener {
+            relayInput.requestFocus()
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(relayInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+
+        // 回车直接发送
+        relayInput.setOnEditorActionListener { _, actionId, event ->
+            val enterDown = event != null &&
+                event.keyCode == KeyEvent.KEYCODE_ENTER &&
+                event.action == KeyEvent.ACTION_DOWN
+            if (actionId == EditorInfo.IME_ACTION_SEND || enterDown) {
+                relaySendButton.performClick()
+                true
+            } else {
+                false
+            }
+        }
+
+        // 单击发送 / 中断，长按打开中继模式菜单
+        relaySendButton.setOnClickListener { dispatchRelay() }
+        relaySendButton.setOnLongClickListener {
+            showRelayOptionsDialog()
+            true
+        }
+        relayModeLabel.setOnClickListener { showRelayOptionsDialog() }
+
+        refreshRelayModeLabel()
+        updateRelayPreview("")
+    }
+
+    /** 发送当前输入框内容；若正在发送则改为中断。 */
+    private fun dispatchRelay() {
+        if (relayController.isBusy) {
+            relayController.cancel()
+            return
+        }
+        val text = relayInput.text?.toString().orEmpty()
+        relayController.sendText(text)
+
+        // 仅在真正开始发送后才清空输入框，失败时保留内容便于重试
+        if (relayController.isBusy) {
+            updateRelayPreview(text)
+            relayInput.setText("")
+        }
+    }
+
+    private fun updateRelayPreview(text: String) {
+        if (!::relayPreview.isInitialized) return
+        relayPreview.text = if (text.isEmpty()) {
+            ""
+        } else {
+            "→ " + relayController.preview(text) + "  (" + relayController.estimateLabel(text) + ")"
+        }
+    }
+
+    private fun refreshRelayModeLabel() {
+        if (!::relayModeLabel.isInitialized) return
+        val tag = when (relayController.mode) {
+            RelayMode.PINYIN_PER_CHAR -> "拼音"
+            RelayMode.PINYIN_BATCH -> "整句"
+            RelayMode.LITERAL -> "直通"
+        }
+        relayModeLabel.text = "$tag · ${relayController.holdMs}ms"
+    }
+
+    private fun showRelayOptionsDialog() {
+        val entries = arrayOf(
+            "中继模式：${relayController.mode.label}",
+            "粘贴宏目标：${relayController.pasteTarget.label}",
+            "按键时序：${relayController.holdMs}ms 保持 / ${relayController.gapMs}ms 间隔",
+            "立即发送粘贴宏（Cmd/Ctrl + V）"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("中继设置")
+            .setItems(entries) { _, which ->
+                when (which) {
+                    0 -> showModeChooser()
+                    1 -> showPasteTargetChooser()
+                    2 -> showTimingChooser()
+                    3 -> relayController.sendPasteMacro()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showModeChooser() {
+        val modes = RelayMode.values()
+        val labels = modes.map { "${it.label}\n${it.desc}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.relay_mode_title)
+            .setSingleChoiceItems(labels, modes.indexOf(relayController.mode)) { dialog, which ->
+                relayController.mode = modes[which]
+                refreshRelayModeLabel()
+                updateRelayPreview(relayInput.text?.toString().orEmpty())
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showPasteTargetChooser() {
+        val targets = PasteTarget.values()
+        val labels = targets.map { it.label }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("粘贴宏目标平台")
+            .setSingleChoiceItems(labels, targets.indexOf(relayController.pasteTarget)) { dialog, which ->
+                relayController.pasteTarget = targets[which]
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showTimingChooser() {
+        // 需求 B.1 要求 15~20ms，这里给出几档预设 + 更保守的慢速档
+        val holds = longArrayOf(12, 15, 18, 20, 30, 50)
+        val gaps = longArrayOf(12, 15, 18, 20, 30, 50)
+        val labels = holds.mapIndexed { i, h ->
+            "保持 ${h}ms / 间隔 ${gaps[i]}ms" + if (h in 15..20) "  (推荐)" else ""
+        }.toTypedArray()
+        val current = holds.indexOfFirst { it == relayController.holdMs }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.relay_timing_title)
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                relayController.holdMs = holds[which]
+                relayController.gapMs = gaps[which]
+                refreshRelayModeLabel()
+                updateRelayPreview(relayInput.text?.toString().orEmpty())
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     @SuppressLint("MissingPermission")
