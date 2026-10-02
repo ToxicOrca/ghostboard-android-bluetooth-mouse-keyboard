@@ -18,9 +18,14 @@ out/
 .gradle/
 build/
 app/build/
+.kotlin/
 
 # Local configuration file (sdk path, etc.)
 local.properties
+
+# 本地开发用的国内镜像加速脚本（与项目本身无关，不应入库）
+gradle-mirrors.init.gradle
+mirrors.init.gradle
 
 # Android Studio
 *.iml
@@ -33,3 +38,8 @@ Thumbs.db
 
 # Claude Code
 .claude/settings.local.json
+
+# 本地开发签名密钥库（切勿提交到公开仓库）
+keystore/
+*.jks
+*.keystore
