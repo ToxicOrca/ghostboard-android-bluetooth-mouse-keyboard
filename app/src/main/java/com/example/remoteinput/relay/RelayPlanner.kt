@@ -5,11 +5,26 @@ import com.example.remoteinput.ui.HidKeyMapper
 
 /** 中继发送模式。 */
 enum class RelayMode(val label: String, val desc: String) {
-    /** 拼音逐字：每个汉字单独打拼音 + Space 上屏。最稳，适合大多数输入法。 */
-    PINYIN_PER_CHAR("拼音·逐字上屏", "每个汉字单独打拼音并敲空格确认，兼容性最好"),
+    /**
+     * 拼音逐字：每个汉字单独打拼音 + Space 上屏。
+     *
+     * ⚠️ 发出去的是**全拼**，所以受控端输入法必须也是**全拼**。
+     * 如果受控端用的是双拼（小鹤/自然码等），这些字母会被解析成完全不同的音节，
+     * 输入法不上屏，屏幕上只会剩一串生字母。
+     */
+    PINYIN_PER_CHAR("拼音·逐字上屏", "逐字打全拼+空格；受控端须为全拼输入法，双拼会解析错"),
 
-    /** 拼音整句：连续汉字合并成一串拼音，整段打完再敲一次空格。速度快，但依赖输入法整句联想。 */
-    PINYIN_BATCH("拼音·整句连打", "连续汉字合并为一条拼音串，末尾只敲一次空格"),
+    /** 拼音整句：连续汉字合并成一串拼音，整段打完再敲一次空格。同样要求受控端是全拼。 */
+    PINYIN_BATCH("拼音·整句连打", "合并成全拼串末尾敲一次空格；受控端须为全拼输入法"),
+
+    /**
+     * Unicode 原样直发：按码点逐字送，不做任何拼音转换。
+     * 受控端需切到 macOS「Unicode 十六进制输入」输入源 —— 按住 Option 敲 4 位码位即插入字符。
+     * 这是唯一能"原样"送达任意字符（含中文/emoji）的纯 HID 路径，且不依赖受控端中文输入法。
+     *
+     * 因为全程不经过任何拼音，**受控端用全拼还是双拼都无所谓**。
+     */
+    UNICODE_HEX("Unicode·原样直发", "按码点逐字发送，受控端切到「Unicode 十六进制输入」；与双拼/全拼无关"),
 
     /** 直通：不做任何转换，按 HID 键码原样发送（等价于原版行为）。 */
     LITERAL("直通·原样按键", "不转换，字符直接映射 HID 键码（英文场景）")
@@ -60,6 +75,9 @@ object RelayPlanner {
             RelayMode.LITERAL -> appendLiteral(text, steps)
             RelayMode.PINYIN_PER_CHAR -> appendPinyin(text, steps, perChar = true)
             RelayMode.PINYIN_BATCH -> appendPinyin(text, steps, perChar = false)
+            // Unicode 直发不是「键码序列」模型（修饰键要跨键保持），
+            // 由 [UnicodeHexRelay] 单独规划、[BluetoothHidManager.sendHeldGroups] 发送。
+            RelayMode.UNICODE_HEX -> Unit
         }
         return steps
     }

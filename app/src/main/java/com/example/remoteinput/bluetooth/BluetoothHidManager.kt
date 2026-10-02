@@ -589,6 +589,101 @@ class BluetoothHidManager private constructor(private val context: Context) {
         )
     }
 
+    /**
+     * 一组「修饰键持续按住」的按键：组内所有键码都在 [modifier] 按住的状态下依次敲出，
+     * 组末统一松开修饰键。
+     *
+     * 专门服务 macOS「Unicode 十六进制输入」—— 该输入法要求按住 Option 连敲 4 位
+     * 十六进制码位，**松开 Option 的瞬间**才提交字符。常规的 [sendKeySequence]
+     * 每发一键都会把修饰键归零，所以必须单独走这条路径。
+     */
+    data class HeldGroup(val modifier: Int, val keys: List<Int>)
+
+    /**
+     * 按组发送「按住修饰键」序列。
+     *
+     * 组内每个键的时序为：
+     *     (修饰键+键码) -> keyHoldMs -> (仅修饰键，键码抬起) -> interKeyMs
+     * 组末再发一次全零报文松开修饰键。
+     *
+     * **为什么组内也要显式抬起键码**：
+     * 受控端（macOS / BLE HID host）会把**字节完全相同的连续报文**当成同一次按键，
+     * 只认一份。如果组内只做「按下」不做「抬起」，那么 `U+4E00` 里的两个连续 `0`
+     * 会发出两份一模一样的报文，第二份被丢掉，后面所有十六进制码位全部错位
+     * ——实测表现为 `测试一下` 变成 `测试丄`。真实键盘每次按键之间必然有抬起，
+     * 这里必须同样模拟。
+     *
+     * @param keyHoldMs  组内单个键的按下保持时间（十六进制直发建议 >= 35ms）
+     * @param interKeyMs 组内抬起键码到下一个键按下之间的间隔
+     * @param groupGapMs 组与组之间的间隔，即松开修饰键后的停顿
+     * @param onProgress 每 8 个按键回调一次 (已发送, 总数)
+     * @param onFinished completed=false 表示被取消或连接中断
+     */
+    fun sendHeldGroups(
+        groups: List<HeldGroup>,
+        keyHoldMs: Long = 40L,
+        interKeyMs: Long = 20L,
+        groupGapMs: Long = 60L,
+        onProgress: ((sent: Int, total: Int) -> Unit)? = null,
+        onFinished: ((completed: Boolean) -> Unit)? = null
+    ) {
+        val total = groups.sumOf { it.keys.size }
+        if (connectedDevice == null || total == 0) {
+            mainHandler.post { onFinished?.invoke(false) }
+            return
+        }
+
+        val token = ++sequenceToken
+
+        sendHandler.post {
+            wakeIfIdle()
+            var sent = 0
+            var aborted = false
+
+            for (group in groups) {
+                if (token != sequenceToken) { aborted = true; break }
+
+                val device = connectedDevice
+                val hid = hidDevice
+                if (device == null || hid == null) { aborted = true; break }
+
+                // 保持修饰键按住、但所有键码抬起 —— 组内相邻键之间的"释放"报文
+                val heldOnlyReport =
+                    byteArrayOf(group.modifier.toByte(), 0, 0, 0, 0, 0, 0, 0)
+
+                for (key in group.keys) {
+                    if (token != sequenceToken) { aborted = true; break }
+
+                    hid.sendReport(
+                        device, 1,
+                        byteArrayOf(group.modifier.toByte(), 0, key.toByte(), 0, 0, 0, 0, 0)
+                    )
+                    sleepQuietly(keyHoldMs)
+
+                    // 关键：组内也要抬起键码，否则连续相同键（U+4E00 的两个 '0'）
+                    // 发出的两份报文完全一致，会被受控端合并成一次按键。
+                    hid.sendReport(device, 1, heldOnlyReport)
+                    sleepQuietly(interKeyMs)
+
+                    sent++
+                    lastSendTimeMs = System.currentTimeMillis()
+                    if (sent % 8 == 0 || sent == total) {
+                        val progress = sent
+                        mainHandler.post { onProgress?.invoke(progress, total) }
+                    }
+                }
+                if (aborted) break
+
+                // 松开修饰键 —— macOS 十六进制输入法正是在这一刻提交字符
+                hid.sendReport(device, 1, emptyKeyReport)
+                sleepQuietly(groupGapMs)
+            }
+
+            val completed = !aborted && sent == total
+            mainHandler.post { onFinished?.invoke(completed) }
+        }
+    }
+
     private fun sleepQuietly(ms: Long) {
         if (ms <= 0L) return
         try {

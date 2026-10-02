@@ -57,6 +57,8 @@ class CompactKeyboardView @JvmOverloads constructor(
         const val KEY_0 = 0x27
         const val KEY_ENTER = 0x28
         const val KEY_ESCAPE = 0x29
+        // macOS 用它切换 ABC/中文输入源（系统设置里默认开启），且是普通键码、不带修饰位
+        const val KEY_CAPSLOCK = 0x39
         const val KEY_BACKSPACE = 0x2A
         const val KEY_TAB = 0x2B
         const val KEY_SPACE = 0x2C

@@ -169,11 +169,49 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="11sp" />
 
+            <!--
+              一键切换受控端输入法状态。
+              ⇪ = Caps Lock：macOS 上它才是 ABC/中文的切换键，且是普通键码不带修饰位，
+                   不会被远程桌面客户端当作"单独修饰键"过滤掉。
+              ⌃␣ = Ctrl+空格：切换输入源（macOS 默认快捷键）。
+            -->
+            <TextView
+                android:id="@+id/relayCapsKey"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:background="@color/key_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
+                android:text="@string/relay_key_caps"
+                android:textColor="@color/accent"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/relayImeKey"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@color/key_bg"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
+                android:text="@string/relay_key_ime"
+                android:textColor="@color/accent"
+                android:textSize="11sp" />
+
             <TextView
                 android:id="@+id/relayModeLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:background="@color/key_bg"
                 android:clickable="true"
                 android:focusable="true"

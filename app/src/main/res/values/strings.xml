@@ -23,4 +23,14 @@
     <string name="relay_empty">请输入要发送的内容</string>
     <string name="relay_paste_mac">粘贴宏：Cmd+V (macOS)</string>
     <string name="relay_paste_win">粘贴宏：Ctrl+V (Windows)</string>
+
+    <!--
+      受控端输入法切换。
+      受控端接上蓝牙 HID 键盘后会进入「键盘模式」，其中/英状态与软键盘是两套，
+      而软键盘此时已被自动隐藏，点不到「中/英」键，只能从键盘侧发快捷键切过去。
+    -->
+    <string name="relay_key_caps">⇪中/英</string>
+    <string name="relay_key_ime">⌃␣输入法</string>
+    <string name="relay_caps_sent">已发送 Caps Lock（切换受控端中/英）</string>
+    <string name="relay_ime_sent">已发送 Ctrl+空格（切换受控端输入法）</string>
 </resources>

@@ -66,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var relaySendButton: Button
     private lateinit var relayPreview: TextView
     private lateinit var relayModeLabel: TextView
+    private lateinit var relayCapsKey: TextView
+    private lateinit var relayImeKey: TextView
     private lateinit var relayController: TextRelayController
     private var lastRelayStepCount = 0
 
@@ -101,6 +103,8 @@ class MainActivity : AppCompatActivity() {
         relaySendButton = findViewById(R.id.relaySendButton)
         relayPreview = findViewById(R.id.relayPreview)
         relayModeLabel = findViewById(R.id.relayModeLabel)
+        relayCapsKey = findViewById(R.id.relayCapsKey)
+        relayImeKey = findViewById(R.id.relayImeKey)
 
         // Singleton — survives activity recreation
         hidManager = BluetoothHidManager.getInstance(this)
@@ -247,6 +251,10 @@ class MainActivity : AppCompatActivity() {
             relayPreview.setTextColor(theme.textSecondary)
             relayModeLabel.setTextColor(theme.accent)
             relayModeLabel.setBackgroundColor(theme.keyBg)
+            relayCapsKey.setTextColor(theme.accent)
+            relayCapsKey.setBackgroundColor(theme.keyBg)
+            relayImeKey.setTextColor(theme.accent)
+            relayImeKey.setBackgroundColor(theme.keyBg)
             refreshRelayModeLabel()
         }
 
@@ -665,6 +673,23 @@ class MainActivity : AppCompatActivity() {
         }
         relayModeLabel.setOnClickListener { showRelayOptionsDialog() }
 
+        // 一键切换受控端输入法状态：
+        // 受控端接上蓝牙 HID 键盘后会切到「键盘模式」，中/英状态与软键盘分离，
+        // 且软键盘会被自动隐藏，点不到「中/英」键 —— 只能从键盘侧发快捷键。
+        relayCapsKey.setOnClickListener {
+            // 用 Caps Lock 而不是 Shift：macOS 不用单独 Shift 切输入法，
+            // 且 Caps Lock 是普通键码（无修饰位），不会被远程客户端当"单独修饰键"过滤。
+            hidManager.sendKeyPress(0, CompactKeyboardView.HidKeyCodes.KEY_CAPSLOCK)
+            statusText.text = getString(R.string.relay_caps_sent)
+        }
+        relayImeKey.setOnClickListener {
+            hidManager.sendKeyPress(
+                CompactKeyboardView.HidKeyCodes.MOD_LCTRL,
+                CompactKeyboardView.HidKeyCodes.KEY_SPACE
+            )
+            statusText.text = getString(R.string.relay_ime_sent)
+        }
+
         refreshRelayModeLabel()
         updateRelayPreview("")
     }
@@ -699,6 +724,7 @@ class MainActivity : AppCompatActivity() {
         val tag = when (relayController.mode) {
             RelayMode.PINYIN_PER_CHAR -> "拼音"
             RelayMode.PINYIN_BATCH -> "整句"
+            RelayMode.UNICODE_HEX -> "Unicode"
             RelayMode.LITERAL -> "直通"
         }
         relayModeLabel.text = "$tag · ${relayController.holdMs}ms"
