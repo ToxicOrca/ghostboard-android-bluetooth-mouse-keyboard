@@ -47,6 +47,12 @@ Built for the couch, the bed, or anywhere you want to control your PC without re
    ```
    The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
 
+   > **On signing.** The git repository contains **no keystores and no prebuilt APKs** —
+   > `.gitignore` covers `*.jks`, `*.keystore` and `*.apk` so they cannot be committed by
+   > accident. An APK is only as trustworthy as the key it is signed with, so building it
+   > yourself is preferred. If you want to publish your own build, generate your own keystore
+   > and keep it **outside** the repository.
+
 2. **Pair your phone with your PC:**
    - Open GhostBoard on your phone
    - Tap **Connect** > **Make Discoverable**
